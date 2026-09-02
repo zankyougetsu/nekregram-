@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+<title>নেকড়ে-গ্রাম — Nekregram v005 — বাংলা সোশ্যাল ডিডাকশন গেম</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tiro+Bangla&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<div class="sky" aria-hidden="true">
+  <div class="moon"></div>
+  <div class="stars"></div>
+</div>
+
+<!-- ---------- মৃত্যুর সময় শুধুমাত্র যে খেলোয়াড়ের চোখে দেখা যায় এমন ফুল-স্ক্রিন রেড ফ্ল্যাশ ---------- -->
+<div id="death-flash" class="death-flash" aria-hidden="true">
+  <span class="death-flash-text">তুমি মারা গেছো 💀</span>
+</div>
+
+<!-- ---------- হোম স্ক্রিন ---------- -->
+<section id="screen-home" class="screen active">
+  <div class="wordmark">
+    <span class="wordmark-eye">🐺</span>
+    <h1>নেকড়ে-গ্রাম</h1>
+    <p class="tagline">রাত নামলেই গ্রামে লুকিয়ে থাকে নেকড়ে। খুঁজে বের করতে পারবে?</p>
+    <p class="version-tag">Nekregram v005</p>
+  </div>
+
+  <div class="panel home-panel">
+    <label class="field">
+      <span>তোমার নাম</span>
+      <input id="input-name" type="text" maxlength="20" placeholder="যেমনঃ রাহাত" />
+    </label>
+
+    <div class="home-actions">
+      <button id="btn-create" class="btn btn-primary">নতুন রুম তৈরি করো</button>
+
+      <div class="divider"><span>অথবা</span></div>
+
+      <label class="field">
+        <span>রুম কোড দিয়ে যোগ দাও</span>
+        <input id="input-code" type="text" maxlength="5" placeholder="যেমনঃ K7QXP" style="text-transform:uppercase" />
+      </label>
+      <button id="btn-join" class="btn btn-secondary">রুমে যোগ দাও</button>
+    </div>
+
+    <p id="home-error" class="error-text"></p>
+  </div>
+
+  <p class="hint">💡 একই WiFi/LAN-এ থাকলে হোস্টের IP ঠিকানা ব্যবহার করে যোগ দাও। ইন্টারনেটে খেলতে সার্ভার হোস্ট করো ও লিংক শেয়ার করো।</p>
+
+  <p class="creator-credit"><span class="creator-credit-spark">✨</span> Created by <span class="creator-credit-name">Kamrul Hasan Sabbir</span></p>
+
+  <button id="btn-dev-gate" class="dev-gate-trigger" title="Developer">⚙️</button>
+</section>
+
+<!-- ---------- লবি স্ক্রিন ---------- -->
+<section id="screen-lobby" class="screen">
+  <header class="topbar">
+    <div>
+      <span class="eyebrow">রুম কোড</span>
+      <div class="room-code" id="lobby-code">-----</div>
+    </div>
+    <button id="btn-leave-lobby" class="btn btn-ghost btn-sm">বেরিয়ে যাও</button>
+  </header>
+
+  <div class="player-grid" id="lobby-circle"></div>
+
+  <div class="lobby-footer">
+    <p id="lobby-count" class="muted"></p>
+    <button id="btn-start" class="btn btn-primary btn-lg" style="display:none">খেলা শুরু করো</button>
+    <p id="lobby-wait" class="muted">হোস্ট খেলা শুরু করার জন্য অপেক্ষা করছি...</p>
+  </div>
+</section>
+
+<!-- ---------- খেলার স্ক্রিন ---------- -->
+<section id="screen-game" class="screen">
+  <header class="topbar">
+    <div class="phase-chip" id="phase-chip">
+      <span id="phase-icon">🌙</span>
+      <span id="phase-label">রাত</span>
+    </div>
+    <div class="timer" id="timer">--</div>
+    <div class="topbar-actions">
+      <button id="btn-my-role" class="btn btn-secondary btn-sm">🎭 আমার রোল</button>
+      <button id="btn-leave-game" class="btn btn-ghost btn-sm">বেরিয়ে যাও</button>
+    </div>
+  </header>
+
+  <div class="player-grid" id="game-circle"></div>
+
+  <div class="banner" id="game-banner"></div>
+
+  <!-- ---------- ডেভেলপার নিয়ন্ত্রণ প্যানেল (শুধু ডেভেলপার সোলো-টেস্ট রুমে দেখা যায়) ---------- -->
+  <div class="dev-panel hidden" id="dev-panel">
+    <h3>🛠️ ডেভেলপার নিয়ন্ত্রণ — যেকোনো খেলোয়াড়ের হয়ে অ্যাকশন নাও</h3>
+    <p class="muted dev-panel-hint">নিচে থেকে একজন খেলোয়াড় বেছে নাও, তারপর তার হয়ে সিদ্ধান্ত নাও।</p>
+    <div class="dev-switcher" id="dev-switcher"></div>
+  </div>
+
+  <div class="action-dock" id="action-dock">
+    <div class="role-tag" id="role-tag"></div>
+    <div id="action-body" class="action-body"></div>
+  </div>
+
+  <div class="sidepanels">
+    <div class="status-panel">
+      <h3>খেলোয়াড় তালিকা</h3>
+      <div id="status-list" class="status-list"></div>
+    </div>
+    <div class="graveyard-panel">
+      <h3>🪦 রোল গোরস্থান</h3>
+      <div id="role-graveyard-list" class="role-graveyard-list"></div>
+    </div>
+    <div class="log-panel">
+      <h3>ঘটনাপ্রবাহ</h3>
+      <div id="log-list" class="log-list"></div>
+    </div>
+    <div class="chat-panel">
+      <h3>আলোচনা</h3>
+      <div id="chat-list" class="chat-list"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" maxlength="300" placeholder="কিছু লিখো..." autocomplete="off" />
+        <button type="submit" class="btn btn-primary btn-sm">পাঠাও</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- সমাপ্তি স্ক্রিন ---------- -->
+<section id="screen-end" class="screen">
+  <div class="end-card">
+    <div id="end-emoji" class="end-emoji">🏁</div>
+    <h2 id="end-title">খেলা শেষ</h2>
+    <p id="end-sub" class="muted"></p>
+    <div id="end-roles" class="end-roles"></div>
+    <button id="btn-play-again" class="btn btn-primary btn-lg">লবিতে ফিরে যাও</button>
+  </div>
+</section>
+
+<div id="toast" class="toast"></div>
+
+<!-- ---------- রোল রুলেট হুইল ওভারলে ---------- -->
+<div id="wheel-overlay" class="overlay hidden">
+  <div class="wheel-modal">
+    <h2 class="wheel-title">তোমার ভূমিকা নির্ধারণ হচ্ছে...</h2>
+    <div class="wheel-frame">
+      <div class="wheel-pointer">▼</div>
+      <div class="wheel" id="role-wheel"></div>
+    </div>
+    <p class="wheel-hint">চাকা ঘুরছে... একটু অপেক্ষা করো</p>
+  </div>
+</div>
+
+<!-- ---------- রোল প্রকাশ / "আমার রোল" মডাল ---------- -->
+<div id="role-modal-overlay" class="overlay hidden">
+  <div class="role-modal">
+    <div class="role-modal-emoji" id="role-modal-emoji">🎭</div>
+    <span class="role-modal-team" id="role-modal-team"></span>
+    <h2 id="role-modal-name"></h2>
+    <p id="role-modal-desc"></p>
+    <div id="role-modal-wolves" class="role-modal-wolves"></div>
+    <button id="btn-role-modal-close" class="btn btn-primary btn-lg">বুঝেছি</button>
+  </div>
+</div>
+
+<!-- ---------- ডেভেলপার গেট (পাসকোড) ---------- -->
+<div id="dev-gate-overlay" class="overlay hidden">
+  <div class="panel dev-modal">
+    <h2 class="dev-modal-title">আর ইউ দা ডেভেলপার?</h2>
+    <label class="field">
+      <span>পাসকোড</span>
+      <input id="dev-passcode-input" type="password" placeholder="পাসকোড লেখো" autocomplete="off" />
+    </label>
+    <p id="dev-gate-error" class="error-text"></p>
+    <div class="dev-modal-actions">
+      <button id="btn-dev-enter" class="btn btn-primary">ভিতরে যান</button>
+      <button id="btn-dev-cancel" class="btn btn-ghost">বাতিল করো</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- ডেভেলপার ড্যাশবোর্ড (প্লেয়ার সংখ্যা) ---------- -->
+<div id="dev-dashboard-overlay" class="overlay hidden">
+  <div class="panel dev-modal">
+    <h2 class="dev-modal-title">ডেভেলপার ড্যাশবোর্ড</h2>
+    <p class="muted">সোলো টেস্টের জন্য মোট খেলোয়াড় সংখ্যা বেছে নাও। তুমি একজন খেলোয়াড় হবে, বাকিরা স্বয়ংক্রিয় বট হবে।</p>
+    <div class="dev-count-grid">
+      <button class="btn btn-secondary dev-count-btn" data-count="4">৪ জন</button>
+      <button class="btn btn-secondary dev-count-btn" data-count="8">৮ জন</button>
+      <button class="btn btn-secondary dev-count-btn" data-count="12">১২ জন</button>
+      <button class="btn btn-secondary dev-count-btn" data-count="16">১৬ জন</button>
+    </div>
+    <p id="dev-dashboard-error" class="error-text"></p>
+    <div class="dev-modal-actions">
+      <button id="btn-dev-dashboard-close" class="btn btn-ghost">বন্ধ করো</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/client.js"></script>
+</body>
+</html>

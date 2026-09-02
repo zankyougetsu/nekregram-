@@ -1,0 +1,896 @@
+:root {
+  --bg: #0d1321;
+  --panel: #161d31;
+  --panel-2: #1d2740;
+  --panel-3: #171f36;
+  --line: #2a3350;
+  --ink: #ece4d3;
+  --ink-dim: #9aa5c0;
+  --amber: #e8a33d;
+  --amber-dim: #c98a2c;
+  --blood: #b3475a;
+  --moon: #d7dce8;
+  --village: #6fae7c;
+  --input-bg: #0f1526;
+  --card-hover-1: #26304f;
+  --card-hover-2: #1a2440;
+  --status-row-bg: rgba(255, 255, 255, 0.02);
+  --devpanel-1: #241a10;
+  --devpanel-2: #1d2740;
+  --radius: 14px;
+  --font-display: "Tiro Bangla", serif;
+  --font-body: "Hind Siliguri", sans-serif;
+}
+
+/* ---------- Wolvesville-স্টাইল দিন/রাত থিম ----------
+   দিনের বেলা (আলোচনা ও ভোট পর্ব) UI স্বয়ংক্রিয়ভাবে উজ্জ্বল/হালকা থিমে
+   পরিবর্তিত হয়, গাঢ় কনট্রাস্ট টেক্সটসহ; রাতে গাঢ় থিম + হালকা টেক্সট
+   ফিরে আসে। renderGame() body-তে ঠিক একটি phase ক্লাস বসায়, তাই নিচের
+   সিলেক্টরগুলো পুরো ইন্টারফেস (ব্যাকগ্রাউন্ড, কার্ড, কন্টেইনার) কভার করে। */
+body.phase-day,
+body.phase-voting {
+  --bg: #f6efe1;
+  --panel: #fffaf1;
+  --panel-2: #f0e6d2;
+  --panel-3: #e6d9bd;
+  --line: #d8c7a3;
+  --ink: #2b2013;
+  --ink-dim: #5b4c37;
+  --amber: #b5721e;
+  --amber-dim: #8f5b16;
+  --blood: #a53850;
+  --moon: #cfc7b0;
+  --village: #3f7a4d;
+  --input-bg: #fffdf8;
+  --card-hover-1: #fff3dd;
+  --card-hover-2: #ffe8c2;
+  --status-row-bg: rgba(0, 0, 0, 0.035);
+  --devpanel-1: #fff3dd;
+  --devpanel-2: #ffeccb;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  transition: background-color .4s ease, color .4s ease;
+  overscroll-behavior-y: contain;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ---------- আকাশ / পটভূমি সজ্জা ---------- */
+.sky {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(ellipse at 20% -10%, #1b2440 0%, var(--bg) 55%);
+  pointer-events: none;
+}
+.moon {
+  position: absolute;
+  top: 6%;
+  right: 8%;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff8e6, var(--moon) 60%, #9fa7bd 100%);
+  box-shadow: 0 0 60px 10px rgba(215, 220, 232, 0.25);
+}
+.stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 10% 20%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 80% 15%, #fff, transparent),
+    radial-gradient(1px 1px at 60% 30%, #fff, transparent),
+    radial-gradient(1px 1px at 30% 60%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 90% 70%, #fff, transparent),
+    radial-gradient(1px 1px at 45% 80%, #fff, transparent);
+  opacity: 0.5;
+  transition: opacity .4s ease;
+}
+.moon { transition: opacity .4s ease; }
+
+/* ---------- স্ক্রিন ম্যানেজমেন্ট ---------- */
+.screen {
+  position: relative;
+  z-index: 1;
+  display: none;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 20px 16px calc(90px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+}
+.screen.active { display: flex; }
+
+/* ---------- হোম ---------- */
+#screen-home {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 22px;
+}
+.wordmark-eye { font-size: 40px; display: block; margin-bottom: 4px; filter: drop-shadow(0 0 12px rgba(232,163,61,.4)); }
+.wordmark h1 {
+  font-family: var(--font-display);
+  font-size: 40px;
+  margin: 0;
+  color: var(--amber);
+  letter-spacing: 0.5px;
+}
+.tagline { color: var(--ink-dim); margin: 8px 0 0; max-width: 320px; }
+.version-tag { color: var(--ink-dim); font-size: 11px; margin: 2px 0 0; opacity: 0.6; letter-spacing: 1px; }
+
+.panel {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px;
+  width: 100%;
+  max-width: 360px;
+  transition: background-color .4s ease, border-color .4s ease;
+}
+.home-panel { display: flex; flex-direction: column; gap: 14px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; text-align: left; font-size: 14px; color: var(--ink-dim); }
+.field input {
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  outline: none;
+  transition: background-color .4s ease, border-color .2s ease, color .4s ease;
+}
+.field input:focus { border-color: var(--amber-dim); }
+
+.home-actions { display: flex; flex-direction: column; gap: 12px; }
+.divider { display: flex; align-items: center; gap: 10px; color: var(--ink-dim); font-size: 12px; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+.hint { color: var(--ink-dim); font-size: 13px; max-width: 340px; text-align: center; }
+.error-text { color: var(--blood); font-size: 13px; min-height: 18px; margin: 0; }
+
+/* ---------- নির্মাতার ক্রেডিট ট্যাগ (হোম স্ক্রিন) ----------
+   খুব ছোট (মিস হয়ে যাবে) নয়, আবার মূল ফর্মের উপর প্রাধান্যও বিস্তার
+   করে না — এমন একটি সুষম, স্বতন্ত্র ব্যাজ হিসেবে ডিজাইন করা হয়েছে। */
+.creator-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 0 2px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  transition: background-color .4s ease, border-color .4s ease, color .4s ease;
+}
+.creator-credit-spark { font-size: 13px; filter: drop-shadow(0 0 4px rgba(232, 163, 61, 0.5)); }
+.creator-credit-name {
+  font-weight: 700;
+  color: var(--amber);
+  letter-spacing: 0.3px;
+}
+
+/* ---------- বোতাম ---------- */
+.btn {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  border: none;
+  border-radius: 10px;
+  padding: 13px 18px;
+  cursor: pointer;
+  transition: transform .08s ease, filter .15s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--amber); color: #23150a; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-secondary { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); }
+.btn-ghost { background: transparent; color: var(--ink-dim); border: 1px solid var(--line); }
+.btn-sm { padding: 8px 12px; font-size: 13px; }
+.btn-lg { padding: 15px 22px; font-size: 16px; width: 100%; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* টাচ ডিভাইসে (মোবাইল/ট্যাবলেট) বোতাম, চিপ ও কার্ডগুলো যথেষ্ট বড়
+   টাচ-টার্গেট (~৪০px+) পায়, যাতে ভুল করে পাশের এলিমেন্টে ট্যাপ না হয় */
+@media (pointer: coarse) {
+  .btn { min-height: 46px; }
+  .btn-sm { min-height: 38px; padding: 9px 14px; }
+  .dev-gate-trigger { width: 40px; height: 40px; font-size: 17px; }
+  .dev-chip { padding: 9px 14px; }
+}
+
+/* ---------- টপবার ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.eyebrow { font-size: 12px; color: var(--ink-dim); }
+.room-code {
+  font-family: var(--font-display);
+  font-size: 26px;
+  letter-spacing: 4px;
+  color: var(--amber);
+}
+.phase-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-weight: 600;
+  color: var(--ink);
+  transition: background-color .4s ease, border-color .4s ease, color .4s ease;
+}
+.timer {
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: var(--moon);
+  min-width: 50px;
+  text-align: center;
+}
+
+/* ---------- Wolvesville-স্টাইল রেসপনসিভ প্লেয়ার গ্রিড ---------- */
+/* --card-min ক্লায়েন্ট থেকে জাভাস্ক্রিপ্ট দিয়ে খেলোয়াড় সংখ্যা
+   অনুযায়ী সেট করা হয় (কম খেলোয়াড়ে বড়, বেশি খেলোয়াড়ে ছোট) */
+.player-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--card-min, 128px), 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 760px;
+  margin: 10px auto 6px;
+  align-content: start;
+}
+.player-card {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel-3));
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 6px;
+  text-align: center;
+  cursor: default;
+  overflow: hidden;
+  transition: transform .12s ease, border-color .15s ease, background .3s ease, background-color .3s ease;
+}
+.player-card .card-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: clamp(12px, 2.4vw, 16px);
+}
+.player-card .pname {
+  font-weight: 700;
+  font-size: clamp(13px, 3.4vw, 21px);
+  color: var(--ink);
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+.player-card .card-offline {
+  font-size: clamp(9px, 1.8vw, 11px);
+  color: var(--ink-dim);
+}
+.player-card .card-mayor-tag {
+  font-size: clamp(9px, 1.8vw, 11px);
+  color: var(--amber);
+  font-weight: 600;
+}
+.player-card.is-host { border-color: var(--amber-dim); }
+.player-card.is-me { box-shadow: 0 0 0 3px rgba(232,163,61,0.35); }
+.player-card.is-dead { opacity: 0.4; filter: grayscale(1); }
+.player-card.is-dead .pname { text-decoration: line-through; }
+.player-card.selectable { cursor: pointer; border-color: var(--amber-dim); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.player-card.selectable:hover { transform: scale(1.04); background: linear-gradient(180deg, var(--card-hover-1), var(--card-hover-2)); }
+.player-card.is-selected {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+.player-card.is-selected .pname,
+.player-card.is-selected .card-offline,
+.player-card.is-selected .card-mayor-tag { color: #23150a; }
+.player-card .vote-badge {
+  position: absolute;
+  top: -2px;
+  right: 6px;
+  background: var(--blood);
+  color: #fff;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-weight: 700;
+}
+
+/* ---------- মৃত্যুর কার্ড-বক্স রেড ব্লিংক (১-২ সেকেন্ড) ---------- */
+/* কেউ মারা গেলে, সবার স্ক্রিনে শুধু সেই খেলোয়াড়ের কার্ড বক্সটি
+   ১.৬ সেকেন্ডের জন্য লাল রঙে ব্লিংক করে (নিহত খেলোয়াড় নিজেও তার
+   নিজের কার্ড বক্সের ব্লিংক দেখে, ফুল-স্ক্রিন ফ্ল্যাশের পাশাপাশি) */
+.player-card.card-blinking {
+  animation: cardDeathBlink .4s ease-in-out 4;
+  z-index: 2;
+}
+@keyframes cardDeathBlink {
+  0%, 100% {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel-3));
+    border-color: var(--line);
+    box-shadow: none;
+  }
+  50% {
+    background: #d21f34;
+    border-color: #ff5064;
+    box-shadow: 0 0 18px 2px rgba(255, 20, 50, 0.65);
+  }
+}
+.player-card.card-blinking .pname,
+.player-card.card-blinking .card-offline,
+.player-card.card-blinking .card-mayor-tag {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- মৃত খেলোয়াড়ের কার্ডে স্থায়ী ক্রস (❌) চিহ্ন ----------
+   ব্লিংক শেষ হওয়ার পরে (অথবা কেউ পরে যোগ দিলে/রিলোড করলে সরাসরি)
+   এই ক্রস চিহ্নটি ম্যাচ শেষ পর্যন্ত কার্ডের উপর স্থায়ীভাবে দেখা যায়। */
+.player-card .card-cross {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(30px, 10vw, 56px);
+  line-height: 1;
+  pointer-events: none;
+  z-index: 3;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+  animation: crossFadeIn .35s ease both;
+}
+@keyframes crossFadeIn {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ---------- গণক ঠাকুরের সাময়িক রোল রিভিল (কার্ড বক্সের ভেতরে) ---------- */
+.player-card.is-revealing {
+  border-color: var(--amber);
+  background: linear-gradient(180deg, #2a2440, #1d2740);
+  animation: revealPulse .4s ease;
+}
+@keyframes revealPulse {
+  from { transform: scale(0.92); }
+  to { transform: scale(1); }
+}
+.card-reveal-emoji { font-size: clamp(22px, 6vw, 34px); line-height: 1; }
+.card-reveal-role {
+  font-weight: 700;
+  font-size: clamp(11px, 2.6vw, 15px);
+  color: var(--amber);
+  line-height: 1.2;
+}
+
+@media (min-width: 720px) {
+  .player-grid { gap: 14px; }
+}
+@media (min-width: 980px) {
+  .player-grid { max-width: 920px; }
+}
+@media (min-width: 1280px) {
+  .player-grid { max-width: 1080px; gap: 16px; }
+}
+
+/* ---------- লবি ---------- */
+.lobby-footer { text-align: center; margin-top: auto; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.muted { color: var(--ink-dim); font-size: 14px; margin: 0; }
+
+/* ---------- ব্যানার / অ্যাকশন ডক ---------- */
+.banner {
+  text-align: center;
+  color: var(--ink-dim);
+  font-size: 14px;
+  min-height: 20px;
+  margin-bottom: 6px;
+}
+.action-dock {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  color: var(--ink);
+  transition: background-color .4s ease, border-color .4s ease, color .4s ease;
+}
+.role-tag {
+  font-family: var(--font-display);
+  color: var(--amber);
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.action-body { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.action-body .btn { flex: 1 1 auto; }
+.action-hint { font-size: 13px; color: var(--ink-dim); }
+.self-heal-counter {
+  font-size: 12.5px;
+  color: var(--amber);
+  font-weight: 600;
+  margin: 0 0 8px;
+  width: 100%;
+}
+
+/* ---------- সাইড প্যানেল (স্ট্যাটাস + লগ + চ্যাট) ---------- */
+.sidepanels { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.status-panel { order: -1; }
+.log-panel, .chat-panel, .status-panel, .graveyard-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  transition: background-color .4s ease, border-color .4s ease;
+}
+.log-panel h3, .chat-panel h3, .status-panel h3, .graveyard-panel h3 {
+  font-family: var(--font-display);
+  font-size: 14px;
+  margin: 0 0 8px;
+  color: var(--ink-dim);
+  font-weight: 400;
+}
+
+/* ---------- স্ট্যাটাস প্যানেল (জীবিত/বহিষ্কৃত তালিকা) ---------- */
+.status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--status-row-bg);
+  color: var(--ink);
+  font-size: 13.5px;
+  transition: background-color .3s ease, color .3s ease;
+}
+.status-row .status-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.status-row .status-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.status-row .status-mark { font-size: 13px; flex-shrink: 0; }
+.status-row.is-me .status-name { color: var(--amber); font-weight: 600; }
+.status-row.is-dead { opacity: 0.55; }
+.status-row.is-dead .status-avatar { filter: grayscale(1); }
+.status-row.is-dead .status-name { text-decoration: line-through; color: var(--blood); }
+.status-row .status-offline { font-size: 11px; color: var(--ink-dim); margin-left: 2px; }
+
+/* ---------- Wolvesville-স্টাইল রোল গোরস্থান সাইডবার ---------- */
+.graveyard-panel { order: 0; }
+.role-graveyard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.graveyard-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--status-row-bg);
+  font-size: 13.5px;
+  color: var(--ink);
+  transition: background-color .3s ease, color .3s ease;
+}
+.graveyard-row .graveyard-emoji { font-size: 15px; flex-shrink: 0; }
+.graveyard-row .graveyard-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graveyard-row.is-eliminated {
+  opacity: 0.55;
+}
+.graveyard-row.is-eliminated .graveyard-name {
+  text-decoration: line-through;
+  color: var(--blood);
+}
+.graveyard-row.is-eliminated .graveyard-emoji { filter: grayscale(1); }
+
+@media (min-width: 720px) {
+  .sidepanels { grid-template-columns: 1fr 1fr; }
+  .status-panel { grid-column: 1 / -1; order: -1; }
+  .status-list { max-height: 140px; }
+  .graveyard-panel { order: 0; }
+  .log-panel { order: 1; }
+  .chat-panel { order: 2; grid-column: 1 / -1; }
+}
+@media (min-width: 980px) {
+  .sidepanels { grid-template-columns: 210px 210px 1fr 1fr; }
+  .status-panel { grid-column: auto; order: 0; }
+  .status-list { max-height: 420px; }
+  .graveyard-panel { order: 1; }
+  .role-graveyard-list { max-height: 420px; }
+  .log-panel { order: 2; grid-column: auto; }
+  .chat-panel { order: 3; grid-column: auto; }
+}
+@media (min-width: 1280px) {
+  .sidepanels { grid-template-columns: 240px 240px 1fr 1fr; gap: 16px; }
+  .status-list, .role-graveyard-list { max-height: 480px; }
+  .log-list, .chat-list { max-height: 320px; }
+}
+
+/* ---------- টপবার অ্যাকশন গ্রুপ ---------- */
+.topbar-actions { display: flex; gap: 8px; align-items: center; }
+.log-list, .chat-list {
+  max-height: 150px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+}
+.log-list div { color: var(--ink-dim); word-break: break-word; }
+.chat-list .chat-line { word-break: break-word; }
+.chat-list .chat-line b { color: var(--amber); }
+.chat-list .chat-line.dead b { color: var(--blood); }
+.chat-form { display: flex; gap: 8px; margin-top: 10px; }
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  outline: none;
+  transition: background-color .4s ease, color .4s ease;
+}
+.chat-form .btn { flex-shrink: 0; }
+
+/* ---------- সমাপ্তি স্ক্রিন ---------- */
+#screen-end { align-items: center; justify-content: center; text-align: center; }
+.end-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 30px 24px;
+  max-width: 380px;
+  width: 100%;
+}
+.end-emoji { font-size: 44px; margin-bottom: 6px; }
+.end-card h2 { font-family: var(--font-display); color: var(--amber); margin: 0 0 6px; font-size: 26px; }
+.end-roles { text-align: left; margin: 18px 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.end-roles div span { color: var(--ink-dim); }
+
+/* ---------- টোস্ট ---------- */
+.toast {
+  position: fixed;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 50;
+  max-width: 90vw;
+  text-align: center;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------- ফেজ থিমিং (দিন/রাত) ---------- */
+body.phase-night .moon { opacity: 1; }
+body.phase-day .moon,
+body.phase-day .stars,
+body.phase-voting .moon,
+body.phase-voting .stars {
+  opacity: 0;
+}
+body.phase-day .sky,
+body.phase-voting .sky {
+  background: radial-gradient(ellipse at 20% -10%, #fff6df 0%, var(--bg) 55%);
+}
+.sky { transition: background .4s ease; }
+body.phase-voting .phase-chip { border-color: var(--blood); }
+
+@media (min-width: 720px) {
+  .screen { padding: 28px 40px 90px; }
+}
+
+/* ছোট ফোন (≤৩৫৯px প্রস্থ) — একটু কম পার্শ্ব প্যাডিং, যাতে বেশি জায়গা থাকে */
+@media (max-width: 359px) {
+  .screen {
+    padding-left: calc(10px + env(safe-area-inset-left, 0px));
+    padding-right: calc(10px + env(safe-area-inset-right, 0px));
+  }
+  .action-body { flex-direction: column; align-items: stretch; }
+  .action-body .btn { width: 100%; }
+}
+
+/* ---------- ডেভেলপার মোড ---------- */
+.dev-gate-trigger {
+  position: fixed;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  z-index: 5;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink-dim);
+  font-size: 15px;
+  opacity: 0.55;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.dev-gate-trigger:hover { opacity: 1; }
+
+.dev-modal { max-width: 380px; width: 100%; max-height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 14px; text-align: left; }
+.dev-modal-title { font-family: var(--font-display); color: var(--amber); font-size: 20px; margin: 0; text-align: center; }
+.dev-modal-actions { display: flex; gap: 10px; }
+.dev-modal-actions .btn { flex: 1; }
+.dev-count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.dev-panel {
+  background: linear-gradient(180deg, var(--devpanel-1), var(--devpanel-2));
+  border: 1px solid var(--amber-dim);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 0 0 14px;
+  color: var(--ink);
+  transition: background-color .4s ease, border-color .4s ease, color .4s ease;
+}
+.dev-panel.hidden { display: none; }
+.dev-panel h3 { margin: 0 0 4px; font-size: 15px; color: var(--amber); }
+.dev-panel-hint { margin: 0 0 10px; font-size: 12px; color: var(--ink-dim); }
+.dev-switcher { display: flex; flex-wrap: wrap; gap: 8px; }
+.dev-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.dev-chip.is-active { border-color: var(--amber); background: rgba(232,163,61,0.16); color: var(--amber); }
+.dev-chip.is-dead { opacity: 0.45; text-decoration: line-through; }
+.dev-chip.needs-action { border-color: var(--blood); }
+.dev-chip .dev-chip-role { font-size: 11px; color: var(--ink-dim); }
+.dev-chip.is-active .dev-chip-role { color: var(--amber-dim); }
+
+/* ---------- ওভারলে (হুইল + রোল মডাল) ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  background: rgba(6, 8, 16, 0.86);
+  backdrop-filter: blur(3px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.overlay.hidden { display: none; }
+
+/* ---------- রুলেট হুইল ---------- */
+.wheel-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+  max-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.wheel-title {
+  font-family: var(--font-display);
+  color: var(--amber);
+  font-size: 22px;
+  margin: 0;
+}
+.wheel-frame {
+  position: relative;
+  width: min(72vw, 55vh, 300px);
+  height: min(72vw, 55vh, 300px);
+  flex-shrink: 0;
+}
+.wheel-pointer {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 26px;
+  color: var(--amber);
+  z-index: 2;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.6));
+}
+.wheel {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 4px solid var(--amber-dim);
+  box-shadow: 0 0 40px rgba(232,163,61,0.25), inset 0 0 20px rgba(0,0,0,0.4);
+  transition: transform 4.5s cubic-bezier(0.12, 0.66, 0.1, 1);
+  transform: rotate(0deg);
+  overflow: hidden;
+}
+.wheel-segment-label {
+  position: absolute;
+  top: 6%;
+  left: 50%;
+  width: 90px;
+  margin-left: -45px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+  transform-origin: 50% 144px;
+  line-height: 1.2;
+}
+.wheel-segment-label .seg-emoji { display: block; font-size: 18px; }
+.wheel-hint { color: var(--ink-dim); font-size: 13px; margin: 0; }
+
+/* ---------- রোল প্রকাশ মডাল ---------- */
+.role-modal {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--amber-dim);
+  border-radius: var(--radius);
+  padding: 30px 26px;
+  max-width: 380px;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  text-align: center;
+  box-shadow: 0 0 50px rgba(232,163,61,0.15);
+  animation: roleModalPop .35s ease;
+}
+@keyframes roleModalPop {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.role-modal-emoji { font-size: 48px; margin-bottom: 4px; }
+.role-modal-team {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--ink-dim);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 12px;
+  margin-bottom: 8px;
+}
+.role-modal h2 {
+  font-family: var(--font-display);
+  color: var(--amber);
+  margin: 4px 0 12px;
+  font-size: 26px;
+}
+.role-modal p { color: var(--ink); font-size: 15px; line-height: 1.6; margin: 0 0 18px; }
+.role-modal-wolves {
+  font-size: 13.5px;
+  color: var(--blood);
+  margin-bottom: 16px;
+}
+
+/* ---------- মৃত্যুর ফুল-স্ক্রিন রেড ফ্ল্যাশ (শুধু নিহত খেলোয়াড়ের নিজের স্ক্রিনে, ১-২ সেকেন্ড) ---------- */
+.death-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(255, 10, 40, 0.55) 0%, rgba(110, 0, 10, 0.88) 100%);
+  opacity: 0;
+}
+.death-flash.show {
+  animation: deathFullFlash 1.7s ease-out;
+}
+.death-flash-text {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 7vw, 44px);
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+  opacity: 0;
+}
+.death-flash.show .death-flash-text {
+  animation: deathFlashText 1.7s ease-out;
+}
+@keyframes deathFullFlash {
+  0%   { opacity: 0; }
+  8%   { opacity: 1; }
+  28%  { opacity: 0.55; }
+  46%  { opacity: 0.95; }
+  70%  { opacity: 0.35; }
+  100% { opacity: 0; }
+}
+@keyframes deathFlashText {
+  0%   { opacity: 0; transform: scale(0.85); }
+  15%  { opacity: 1; transform: scale(1); }
+  75%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.05); }
+}

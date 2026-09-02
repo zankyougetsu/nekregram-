@@ -1,0 +1,17 @@
+{
+  "name": "nekre-gram",
+  "version": "0.0.5",
+  "displayName": "Nekregram v005",
+  "description": "নেকড়ে-গ্রাম (Nekregram) — একটি বাংলা সোশ্যাল ডিডাকশন (Werewolf ধাঁচের) মাল্টিপ্লেয়ার গেম",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
