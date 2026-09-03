@@ -11,6 +11,7 @@ const APP_VERSION = "Nekregram v005";
 const express = require("express");
 const http = require("http");
 const path = require("path");
+const crypto = require("crypto");
 const { Server } = require("socket.io");
 
 const app = express();
@@ -31,6 +32,13 @@ const DURATIONS = {
   reveal: 8_000,
   hunterRevenge: 15_000,
 };
+
+// একজন খেলোয়াড়ের সংযোগ বিচ্ছিন্ন হওয়ার পর, তাকে সক্রিয় রুম/সেশন
+// থেকে সম্পূর্ণভাবে সরিয়ে ফেলার আগে এই সময় পর্যন্ত অপেক্ষা করা হয়,
+// যাতে পেজ রিফ্রেশ বা সাময়িক নেটওয়ার্ক সমস্যায় সে নিজের পুরনো
+// সেশনেই (একই রোল, একই স্লট) ফিরে আসতে পারে — নতুন কোনো "ভূত"
+// (duplicate) প্লেয়ার তৈরি না করেই।
+const RECONNECT_GRACE_MS = 60_000;
 
 // রোলের তালিকা এবং বাংলা বিবরণ
 const ROLES = {
@@ -171,13 +179,23 @@ function createRoom(hostSocketId, hostName, opts = {}) {
     roleDeckCounts: null,
   };
   rooms.set(code, room);
-  addPlayer(room, hostSocketId, hostName, { isHost: true });
-  return room;
+  const token = addPlayer(room, hostSocketId, hostName, { isHost: true });
+  return { room, token };
 }
 
-function addPlayer(room, socketId, name, { isHost = false, isBot = false } = {}) {
+// প্রতিটি খেলোয়াড়ের জন্য একটি দীর্ঘস্থায়ী, অনুমান করা কঠিন সেশন
+// টোকেন তৈরি করা হয় — সকেট আইডি পুনরায় সংযোগের সময় পরিবর্তন হয়ে
+// গেলেও, ক্লায়েন্ট এই টোকেন সংরক্ষণ করে রাখলে সার্ভার একই
+// খেলোয়াড়কে চিনে সেই একই সেশনে ফিরিয়ে আনতে পারে।
+function generateSessionToken() {
+  return crypto.randomBytes(18).toString("hex");
+}
+
+function addPlayer(room, socketId, name, { isHost = false, isBot = false, token = null } = {}) {
+  const sessionToken = token || generateSessionToken();
   room.players.set(socketId, {
     id: socketId,
+    token: sessionToken,
     name: (name || "").slice(0, 20) || "খেলোয়াড়",
     role: null,
     alive: true,
@@ -190,7 +208,90 @@ function addPlayer(room, socketId, name, { isHost = false, isBot = false } = {})
     doctorSelfHealUsed: false,
     mayorRevealed: false,
     protectedTonight: false,
+    disconnectTimer: null,
   });
+  return sessionToken;
+}
+
+// টোকেন দিয়ে রুমের মধ্যে খেলোয়াড় খুঁজে বের করা হয় — পুনরায়
+// সংযোগের অনুরোধ (rejoinRoom) হ্যান্ডল করার জন্য ব্যবহৃত হয়।
+function findPlayerByToken(room, token) {
+  if (!token) return null;
+  for (const p of room.players.values()) {
+    if (p.token === token) return p;
+  }
+  return null;
+}
+
+// একজন খেলোয়াড় নতুন সকেট আইডি নিয়ে ফিরে এলে, রুমের অভ্যন্তরে তার
+// পরিচয়ের সাথে জড়িত সব রেফারেন্স (হোস্ট আইডি, ডেভ-ওনার আইডি,
+// পেন্ডিং শিকারী আইডি, রাতের অ্যাকশন/দিনের ভোটের কী ও টার্গেট)
+// পুরনো সকেট আইডি থেকে নতুনটিতে সরিয়ে নেওয়া হয়, যাতে কোনো
+// "ভূত" (ghost/duplicate) এন্ট্রি তৈরি না হয়।
+function rekeyPlayerIdentity(room, oldId, newId) {
+  const player = room.players.get(oldId);
+  if (!player) return;
+  room.players.delete(oldId);
+  player.id = newId;
+  room.players.set(newId, player);
+
+  if (room.hostId === oldId) room.hostId = newId;
+  if (room.devOwnerId === oldId) room.devOwnerId = newId;
+  if (room.pendingHunterId === oldId) room.pendingHunterId = newId;
+
+  if (Object.prototype.hasOwnProperty.call(room.nightActions, oldId)) {
+    room.nightActions[newId] = room.nightActions[oldId];
+    delete room.nightActions[oldId];
+  }
+  for (const act of Object.values(room.nightActions)) {
+    if (act.targetId === oldId) act.targetId = newId;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(room.dayVotes, oldId)) {
+    room.dayVotes[newId] = room.dayVotes[oldId];
+    delete room.dayVotes[oldId];
+  }
+  for (const voter of Object.keys(room.dayVotes)) {
+    if (room.dayVotes[voter] === oldId) room.dayVotes[voter] = newId;
+  }
+
+  if (Array.isArray(room.lastNightResult)) {
+    for (const d of room.lastNightResult) {
+      if (d.id === oldId) d.id = newId;
+    }
+  }
+}
+
+// একজন খেলোয়াড়কে রুম থেকে পুরোপুরি ও স্থায়ীভাবে সরিয়ে ফেলা হয়
+// (কোনো ঘোস্ট/ডুপ্লিকেট এন্ট্রি অবশিষ্ট থাকে না)। যেকোনো পেন্ডিং
+// রিকানেক্ট-টাইমার থাকলে সেটিও পরিষ্কার করা হয়।
+function removePlayerCompletely(room, socketId) {
+  const player = room.players.get(socketId);
+  if (player && player.disconnectTimer) {
+    clearTimeout(player.disconnectTimer);
+    player.disconnectTimer = null;
+  }
+  room.players.delete(socketId);
+}
+
+// একজন খেলোয়াড় সরিয়ে ফেলার পর রুমের সাধারণ পরিণতি হ্যান্ডল করা হয়:
+// রুম খালি হয়ে গেলে রুমটাই মুছে ফেলা, আর হোস্ট বেরিয়ে গেলে থাকলে
+// পরবর্তী সংযুক্ত খেলোয়াড়কে নতুন হোস্ট বানানো।
+function finalizeAfterRemoval(room, removedSocketId) {
+  if (room.players.size === 0) {
+    clearTimer(room);
+    rooms.delete(room.code);
+    return;
+  }
+  if (room.hostId === removedSocketId) {
+    const next = [...room.players.values()].find((p) => p.connected !== false);
+    if (next) {
+      room.hostId = next.id;
+      next.isHost = true;
+      pushLog(room, `${next.name} এখন নতুন হোস্ট।`);
+    }
+  }
+  broadcast(room);
 }
 
 function alivePlayers(room) {
@@ -704,9 +805,9 @@ function resetToLobby(room) {
 // ------------------------------------------------------------
 io.on("connection", (socket) => {
   socket.on("createRoom", ({ name }, cb) => {
-    const room = createRoom(socket.id, name);
+    const { room, token } = createRoom(socket.id, name);
     socket.join(room.code);
-    cb && cb({ ok: true, code: room.code });
+    cb && cb({ ok: true, code: room.code, token });
     broadcast(room);
   });
 
@@ -716,10 +817,54 @@ io.on("connection", (socket) => {
     if (room.phase !== "LOBBY") return cb && cb({ error: "খেলা ইতিমধ্যে শুরু হয়ে গেছে।" });
     if (room.players.size >= 16) return cb && cb({ error: "রুম পূর্ণ (সর্বোচ্চ ১৬ জন)।" });
 
-    addPlayer(room, socket.id, name, {});
+    const token = addPlayer(room, socket.id, name, {});
     socket.join(room.code);
     pushLog(room, `${room.players.get(socket.id).name} রুমে যোগ দিয়েছে।`);
-    cb && cb({ ok: true, code: room.code });
+    cb && cb({ ok: true, code: room.code, token });
+    broadcast(room);
+  });
+
+  // ------------------------------------------------------------
+  // পুনরায় সংযোগ (reconnect) — পেজ রিফ্রেশ বা নেটওয়ার্ক বিচ্ছিন্নতার
+  // পর ক্লায়েন্ট তার সংরক্ষিত সেশন টোকেন পাঠিয়ে পুরনো খেলোয়াড়
+  // স্লটে ফিরে আসার চেষ্টা করে। পুরনো সকেট আইডি নতুনটির সাথে
+  // অদলবদল (rekey) করা হয়, আর যদি পুরনো সকেটটি (যেমন — পুরনো ট্যাব
+  // এখনো খোলা) সত্যিই এখনও সংযুক্ত থাকে, সেটিকে জোরপূর্বক বিচ্ছিন্ন
+  // করে দেওয়া হয় — যাতে একই খেলোয়াড়ের দুটি সক্রিয় সেশন কখনোই
+  // একসাথে না থাকে (ভূত/ডুপ্লিকেট প্লেয়ার বাগ)।
+  socket.on("rejoinRoom", ({ code, token, name }, cb) => {
+    const room = rooms.get((code || "").toUpperCase());
+    if (!room) return cb && cb({ error: "এই রুমটি আর সক্রিয় নেই।" });
+
+    const existing = findPlayerByToken(room, token);
+    if (!existing) return cb && cb({ error: "সেশন খুঁজে পাওয়া যায়নি — নতুন করে যোগ দাও।" });
+
+    const oldSocketId = existing.id;
+
+    if (oldSocketId !== socket.id) {
+      // পুরনো সকেট এখনো টেকনিক্যালি সংযুক্ত থাকলে (যেমন — পুরনো ট্যাব
+      // বন্ধ হয়নি, বা দ্রুত রিফ্রেশে disconnect ইভেন্ট এখনো আসেনি),
+      // সেই পুরনো সেশনটি সম্পূর্ণভাবে ধ্বংস করে দেওয়া হয়।
+      const oldSocket = io.sockets.sockets.get(oldSocketId);
+      if (oldSocket) {
+        oldSocket.removeAllListeners("disconnect");
+        oldSocket.disconnect(true);
+      }
+      if (existing.disconnectTimer) {
+        clearTimeout(existing.disconnectTimer);
+        existing.disconnectTimer = null;
+      }
+      rekeyPlayerIdentity(room, oldSocketId, socket.id);
+    } else if (existing.disconnectTimer) {
+      clearTimeout(existing.disconnectTimer);
+      existing.disconnectTimer = null;
+    }
+
+    existing.connected = true;
+    if (name) existing.name = String(name).slice(0, 20) || existing.name;
+    socket.join(room.code);
+    pushLog(room, `${existing.name} আবার সংযুক্ত হয়েছে।`);
+    cb && cb({ ok: true, code: room.code, token: existing.token });
     broadcast(room);
   });
 
@@ -731,7 +876,7 @@ io.on("connection", (socket) => {
     }
     const count = [4, 8, 12, 16].includes(playerCount) ? playerCount : 8;
 
-    const room = createRoom(socket.id, name || "ডেভেলপার", { isDev: true });
+    const { room, token } = createRoom(socket.id, name || "ডেভেলপার", { isDev: true });
     socket.join(room.code);
 
     for (let i = 1; i < count; i++) {
@@ -746,7 +891,7 @@ io.on("connection", (socket) => {
       rooms.delete(room.code);
       return cb && cb({ error: result.error });
     }
-    cb && cb({ ok: true, code: room.code });
+    cb && cb({ ok: true, code: room.code, token });
   });
 
   socket.on("startGame", ({ code }, cb) => {
@@ -870,10 +1015,13 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     for (const room of rooms.values()) {
-      if (room.players.has(socket.id)) handleLeave(socket, room.code);
+      if (room.players.has(socket.id)) handleDisconnect(socket, room.code);
     }
   });
 
+  // একজন খেলোয়াড় স্বেচ্ছায় "leaveRoom" চাপলে (গেম থেকে বেরিয়ে
+  // যাওয়া), তাকে সাথে সাথেই ও সম্পূর্ণভাবে সরিয়ে ফেলা হয় — কোনো
+  // রিকানেক্ট গ্রেস পিরিয়ড ছাড়াই, কারণ এটি একটি ইচ্ছাকৃত প্রস্থান।
   function handleLeave(socket, code) {
     const room = rooms.get(code);
     if (!room) return;
@@ -881,8 +1029,34 @@ io.on("connection", (socket) => {
     if (!player) return;
 
     // ডেভেলপার সোলো-টেস্ট রুমে বট প্লেয়ারদের কোনো আসল সংযোগ নেই যার
-    // কাছে হোস্ট হস্তান্তর করা যায় — তাই ডেভেলপার বেরিয়ে গেলে/সংযোগ
-    // বিচ্ছিন্ন হলে পুরো টেস্ট রুমটিই বন্ধ করে দেওয়া হয়
+    // কাছে হোস্ট হস্তান্তর করা যায় — তাই ডেভেলপার বেরিয়ে গেলে পুরো
+    // টেস্ট রুমটিই বন্ধ করে দেওয়া হয়
+    if (room.isDev && room.devOwnerId === socket.id) {
+      clearTimer(room);
+      rooms.delete(room.code);
+      return;
+    }
+
+    removePlayerCompletely(room, socket.id);
+    pushLog(room, `${player.name} রুম ছেড়ে চলে গেছে।`);
+    finalizeAfterRemoval(room, socket.id);
+  }
+
+  // সকেট সংযোগ বিচ্ছিন্ন হলে (ট্যাব বন্ধ, নেটওয়ার্ক ড্রপ, পেজ
+  // রিফ্রেশ) — লবিতে থাকলে সাথে সাথেই পুরোপুরি সরিয়ে ফেলা হয়, কারণ
+  // লবিতে বাঁচিয়ে রাখার মতো কোনো গেম-স্টেট (রোল ইত্যাদি) নেই।
+  // কিন্তু খেলা চলাকালীন সাথে সাথেই মুছে না ফেলে একটি রিকানেক্ট
+  // গ্রেস পিরিয়ড দেওয়া হয় (RECONNECT_GRACE_MS) — এই সময়ের মধ্যে
+  // ক্লায়েন্ট তার সংরক্ষিত সেশন টোকেন দিয়ে "rejoinRoom" পাঠালে সে
+  // ঠিক আগের রোল/স্লট নিয়েই ফিরে আসতে পারে, নতুন কোনো ডুপ্লিকেট
+  // এন্ট্রি তৈরি না করেই। সময় শেষ হয়ে গেলে খেলোয়াড়কে সক্রিয়
+  // রুম/সেশন থেকে সম্পূর্ণভাবে সরিয়ে ফেলা হয়।
+  function handleDisconnect(socket, code) {
+    const room = rooms.get(code);
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player) return;
+
     if (room.isDev && room.devOwnerId === socket.id) {
       clearTimer(room);
       rooms.delete(room.code);
@@ -890,30 +1064,27 @@ io.on("connection", (socket) => {
     }
 
     if (room.phase === "LOBBY") {
-      room.players.delete(socket.id);
+      removePlayerCompletely(room, socket.id);
       pushLog(room, `${player.name} রুম ছেড়ে চলে গেছে।`);
-    } else {
-      player.connected = false;
-      pushLog(room, `${player.name} সংযোগ বিচ্ছিন্ন হয়ে গেছে।`);
-    }
-
-    if (room.players.size === 0) {
-      clearTimer(room);
-      rooms.delete(room.code);
+      finalizeAfterRemoval(room, socket.id);
       return;
     }
 
-    if (room.hostId === socket.id) {
-      player.isHost = false;
-      const next = [...room.players.values()].find((p) => p.connected !== false);
-      if (next) {
-        room.hostId = next.id;
-        next.isHost = true;
-        pushLog(room, `${next.name} এখন নতুন হোস্ট।`);
-      }
-    }
-
+    player.connected = false;
+    pushLog(room, `${player.name} সংযোগ বিচ্ছিন্ন হয়ে গেছে। পুনরায় সংযোগের জন্য অপেক্ষা করা হচ্ছে...`);
     broadcast(room);
+
+    if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
+    player.disconnectTimer = setTimeout(() => {
+      const stillHere = room.players.get(socket.id);
+      // এর মধ্যেই rejoinRoom দিয়ে ফিরে এসে থাকলে (connected === true
+      // অথবা rekey হয়ে যাওয়ায় এই socketId-তে আর কেউ নেই), কিছু করার
+      // দরকার নেই।
+      if (!stillHere || stillHere.connected) return;
+      removePlayerCompletely(room, socket.id);
+      pushLog(room, `${player.name} নির্দিষ্ট সময়ের মধ্যে ফিরে না আসায় তাকে রুম থেকে সম্পূর্ণভাবে সরিয়ে ফেলা হয়েছে।`);
+      finalizeAfterRemoval(room, socket.id);
+    }, RECONNECT_GRACE_MS);
   }
 });
 

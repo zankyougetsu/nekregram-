@@ -11,6 +11,82 @@ let latestState = null;
 let selectedTargetId = null;
 let seerResultTimeout = null;
 
+// ------------------------------------------------------------
+// সেশন পার্সিস্টেন্স (ঘোস্ট/ডুপ্লিকেট প্লেয়ার বাগ ফিক্স)
+// ------------------------------------------------------------
+// সার্ভার প্রতিটি খেলোয়াড়কে একটি সেশন টোকেন দেয়, যা localStorage-এ
+// রাখা হয়। পেজ রিফ্রেশ বা সাময়িক নেটওয়ার্ক বিচ্ছিন্নতার পর নতুন
+// সকেট সংযোগ তৈরি হলে (নতুন socket.id সহ), এই টোকেন দিয়ে সার্ভারকে
+// জানানো হয় যে এটি একই খেলোয়াড় — যাতে পুরনো স্লট/রোল ফিরে পাওয়া
+// যায় এবং নতুন কোনো "ভূত" প্লেয়ার তৈরি না হয়।
+const SESSION_STORAGE_KEY = "nekregram_session";
+let rejoinInFlight = false;
+
+function saveSession(code, token) {
+  if (!code || !token) return;
+  try {
+    localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({ code, token, name: $("#input-name") ? $("#input-name").value.trim() : "" })
+    );
+  } catch (e) {
+    // localStorage না থাকলে (প্রাইভেট মোড ইত্যাদি) সেশন সংরক্ষণ না
+    // হলেও স্বাভাবিক খেলা চালিয়ে যাওয়া যাবে, শুধু রিফ্রেশে রিকানেক্ট
+    // করা যাবে না।
+  }
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch (e) {}
+}
+
+// socket.io-এর "connect" ইভেন্ট প্রথমবার সংযোগ স্থাপনের সময়, এবং
+// (পেজ রিলোড না হয়ে) নেটওয়ার্ক বিচ্ছিন্নতার পর স্বয়ংক্রিয় পুনরায়
+// সংযোগের সময়ও ফায়ার হয় — উভয় ক্ষেত্রেই আমরা সংরক্ষিত সেশন থাকলে
+// সেটি দিয়ে rejoinRoom পাঠানোর চেষ্টা করি, যাতে সার্ভার পুরনো
+// খেলোয়াড় স্লটেই ফিরিয়ে নেয় (নতুন সকেট আইডি সহ) এবং কোনো ভূত/
+// ডুপ্লিকেট এন্ট্রি তৈরি না হয়।
+socket.on("connect", () => {
+  const session = loadSession();
+  if (!session || !session.code || !session.token) return;
+  if (rejoinInFlight) return;
+  rejoinInFlight = true;
+
+  socket.emit("rejoinRoom", { code: session.code, token: session.token, name: session.name }, (res) => {
+    rejoinInFlight = false;
+    if (!res || res.error) {
+      // সেশনের মেয়াদ শেষ হয়ে গেছে (গ্রেস পিরিয়ড পার হয়ে গেছে, বা
+      // রুম আর নেই) — সংরক্ষিত সেশন মুছে হোম স্ক্রিনে ফেরত পাঠানো হয়।
+      clearSession();
+      if (myRoomCode) {
+        myRoomCode = null;
+        toast((res && res.error) || "সেশনের মেয়াদ শেষ হয়ে গেছে। আবার যোগ দাও।");
+        showScreen("home");
+      }
+      return;
+    }
+    myRoomCode = res.code;
+    saveSession(res.code, res.token || session.token);
+    // বাকি সব — লবি/গেম স্ক্রিন, রোল, বোর্ড ইত্যাদি — সার্ভার থেকে
+    // আসা পরবর্তী "state" ইভেন্টের মাধ্যমেই স্বয়ংক্রিয়ভাবে রেন্ডার হবে।
+  });
+});
+
+socket.on("disconnect", () => {
+  if (myRoomCode) toast("সংযোগ বিচ্ছিন্ন হয়েছে — পুনরায় সংযোগের চেষ্টা চলছে...");
+});
+
 // গণক ঠাকুরের সাময়িক রোল-রিভিল কার্ড বক্সে দেখানোর জন্য
 // (সার্ভার থেকে seerReveal ইভেন্ট এলে সেট হয়, ৩.৫ সেকেন্ড পর নিজে থেকে মুছে যায়)
 let seerReveal = null; // { targetId, role, emoji, until }
@@ -108,6 +184,7 @@ $("#btn-create").addEventListener("click", () => {
   socket.emit("createRoom", { name }, (res) => {
     if (res.error) return showHomeError(res.error);
     myRoomCode = res.code;
+    saveSession(res.code, res.token);
     showScreen("lobby");
   });
 });
@@ -120,6 +197,7 @@ $("#btn-join").addEventListener("click", () => {
   socket.emit("joinRoom", { name, code }, (res) => {
     if (res.error) return showHomeError(res.error);
     myRoomCode = res.code;
+    saveSession(res.code, res.token);
     showScreen("lobby");
   });
 });
@@ -184,6 +262,10 @@ function startDevSolo(count) {
     isDevOwner = true;
     devActingAsId = null;
     selectedTargetId = null;
+    // ডেভেলপার সোলো-টেস্ট রুম ডেভেলপারের সংযোগ বিচ্ছিন্ন হলেই সাথে
+    // সাথে বন্ধ হয়ে যায় (সার্ভারে কোনো রিকানেক্ট গ্রেস পিরিয়ড নেই),
+    // তাই এর জন্য কোনো পুনরায়-সংযোগ সেশন সংরক্ষণ করার দরকার নেই।
+    clearSession();
     $("#dev-dashboard-overlay").classList.add("hidden");
     // "state" ইভেন্ট এসে বাকিটা রেন্ডার করবে (গেম সরাসরি রাত দিয়ে শুরু হবে)
   });
@@ -203,6 +285,7 @@ $("#btn-leave-game").addEventListener("click", leaveRoom);
 
 function leaveRoom() {
   socket.emit("leaveRoom", { code: myRoomCode });
+  clearSession();
   myRoomCode = null;
   myRole = null;
   isDevRoom = false;
@@ -383,6 +466,16 @@ socket.on("state", (state) => {
   isDevOwner = !!state.isDevOwner;
   detectDeathsAndTriggerEffects(state);
   latestState = state;
+
+  // পুনরায় সংযোগের পর (পেজ রিফ্রেশ ইত্যাদি) "roleAssigned" ইভেন্ট
+  // আর আসে না, কারণ সেটি শুধু গেম শুরুর সময় একবারই পাঠানো হয়।
+  // তাই প্রতিটি state আপডেট থেকেই নিজের রোল ও সহযোগী নেকড়েদের
+  // তালিকা সিঙ্ক করে রাখা হয়, যাতে অ্যাকশন ডক ও রোল মডাল
+  // রিকানেক্টের পরেও সঠিকভাবে কাজ করে।
+  if (state.me && state.me.role) {
+    myRole = state.me.role;
+    fellowWolves = state.fellowWolves || [];
+  }
 
   if (state.phase === "LOBBY") {
     document.body.className = "";
