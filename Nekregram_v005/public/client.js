@@ -610,6 +610,75 @@ window.addEventListener("orientationchange", () => {
   });
 });
 
+// ------------------------------------------------------------
+// ব্রাউজার পেজ স্ক্রল বন্ধ — ইন-গেম কীবোর্ড কন্ট্রোল অক্ষত থাকে
+// preventDefault শুধু ব্রাউজারের ডিফল্ট স্ক্রল আটকায়; অন্য লিসনার
+// (খেলোয়াড় মুভমেন্ট ইত্যাদি) একই কি ইভেন্ট পেতে থাকে।
+// ------------------------------------------------------------
+const PAGE_SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  " ",
+  "Space",
+  "Spacebar",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+]);
+
+function isTextEntryTarget(el) {
+  if (!el || el === document.body || el === document.documentElement) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+function canScrollInWheelDirection(el, deltaY) {
+  const style = window.getComputedStyle(el);
+  const overflowY = style.overflowY;
+  if (overflowY !== "auto" && overflowY !== "scroll") return false;
+  if (el.scrollHeight <= el.clientHeight + 1) return false;
+  if (deltaY < 0) return el.scrollTop > 0;
+  if (deltaY > 0) return el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+  return true;
+}
+
+function wheelShouldReachInnerScroller(e) {
+  let el = e.target;
+  if (el && el.nodeType === Node.TEXT_NODE) el = el.parentElement;
+  while (el && el !== document.body && el !== document.documentElement) {
+    if (el.id === "game-canvas") break;
+    if (canScrollInWheelDirection(el, e.deltaY)) return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
+function preventPageScrollKey(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (!PAGE_SCROLL_KEYS.has(e.key) && !PAGE_SCROLL_KEYS.has(e.code)) return;
+  if (isTextEntryTarget(e.target)) return;
+  e.preventDefault();
+}
+
+function preventPageScrollWheel(e) {
+  if (wheelShouldReachInnerScroller(e)) return;
+  e.preventDefault();
+}
+
+const scrollLockOpts = { passive: false };
+window.addEventListener("keydown", preventPageScrollKey, scrollLockOpts);
+window.addEventListener("wheel", preventPageScrollWheel, scrollLockOpts);
+
+const gameCanvas = document.getElementById("game-canvas");
+if (gameCanvas) {
+  gameCanvas.addEventListener("keydown", preventPageScrollKey, scrollLockOpts);
+  gameCanvas.addEventListener("wheel", preventPageScrollWheel, scrollLockOpts);
+}
+
 function makeCard(p, { selectable = false, voteCount = 0, canSelectSelf = false } = {}) {
   const el = document.createElement("div");
   el.className = "player-card";

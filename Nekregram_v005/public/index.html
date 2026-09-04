@@ -1,14 +1,15 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="bn" class="no-page-scroll">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>নেকড়ে-গ্রাম — Nekregram v005 — বাংলা সোশ্যাল ডিডাকশন গেম</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tiro+Bangla&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css" />
 </head>
-<body>
+<body class="no-page-scroll">
+<canvas id="game-canvas" class="game-canvas" tabindex="0" aria-hidden="true"></canvas>
 
 <div class="sky" aria-hidden="true">
   <div class="moon"></div>
@@ -26,7 +27,7 @@
     <span class="wordmark-eye">🐺</span>
     <h1>নেকড়ে-গ্রাম</h1>
     <p class="tagline">রাত নামলেই গ্রামে লুকিয়ে থাকে নেকড়ে। খুঁজে বের করতে পারবে?</p>
-    <p class="version-tag">Nekregram v005</p>
+    <p class="version-tag">Nekregram v0.0.6</p>
   </div>
 
   <div class="panel home-panel">
@@ -140,6 +141,14 @@
     <button id="btn-play-again" class="btn btn-primary btn-lg">লবিতে ফিরে যাও</button>
   </div>
 </section>
+
+<div id="game-version-log" class="game-version-log" aria-hidden="true">
+  <p class="game-version-log-title">Version 0.0.6</p>
+  <ul class="game-version-log-list">
+    <li>Fixed browser scrolling bug during gameplay.</li>
+    <li>Fixed player ghosting / session disconnect issue.</li>
+  </ul>
+</div>
 
 <div id="toast" class="toast"></div>
 
